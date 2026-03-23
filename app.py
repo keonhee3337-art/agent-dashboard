@@ -1,24 +1,28 @@
 """
 Agent Dashboard — Keonhee's HQ
-Pixel-art style cards showing status of each active Claude terminal.
-Polls agents/status.json every 3 seconds.
+Shows task, status, and color per agent. Polls agents/status.json every 3s.
+
+Status colors:
+  green  (#00CC44) — working
+  red    (#FF3355) — needs human action
+  gray   (#555566) — idle / not running
 """
 
 import sys
 import json
 import time
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime
 
 sys.stdout.reconfigure(encoding="utf-8")
 
 import streamlit as st
 
 # ---------------------------------------------------------------------------
-# Path resolution — works locally and on Streamlit Cloud
+# Path resolution
 # ---------------------------------------------------------------------------
-_HERE = Path(__file__).resolve().parent          # tools/agent-dashboard/
-_PROJECT_ROOT = _HERE.parent.parent              # MCP_Agentic AI/
+_HERE = Path(__file__).resolve().parent
+_PROJECT_ROOT = _HERE.parent.parent
 STATUS_FILE = _PROJECT_ROOT / "agents" / "status.json"
 
 # ---------------------------------------------------------------------------
@@ -30,26 +34,23 @@ AGENTS = [
     {"name": "SME Diag",   "icon": "🏭", "project": "sme-diagnostic-ai"},
     {"name": "Consulting", "icon": "📊", "project": "consulting-emulation"},
     {"name": "Next Role",  "icon": "🎯", "project": "next-ai-role"},
+    {"name": "Discord Bot","icon": "💬", "project": "tools/discord-bot"},
 ]
 
-STATUS_COLORS = {
-    "working": "#FFD700",   # gold
-    "idle":    "#555566",   # dark gray
-    "done":    "#00CC66",   # green
+# Status → color + label
+STATUS_CONFIG = {
+    "working": {"color": "#00CC44", "label": "● WORKING",      "dot": "#00CC44"},
+    "blocked": {"color": "#FF3355", "label": "⚠ NEEDS ACTION", "dot": "#FF3355"},
+    "idle":    {"color": "#555566", "label": "○ IDLE",          "dot": "#555566"},
+    "done":    {"color": "#00CC44", "label": "✓ DONE",          "dot": "#00CC44"},
 }
-
-STATUS_LABELS = {
-    "working": "● WORKING",
-    "idle":    "○ IDLE",
-    "done":    "✓ DONE",
-}
+DEFAULT_CONFIG = STATUS_CONFIG["idle"]
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def load_status() -> dict:
-    """Read status.json. Returns empty dict if missing or malformed."""
     if not STATUS_FILE.exists():
         return {}
     try:
@@ -59,131 +60,123 @@ def load_status() -> dict:
 
 
 def relative_time(iso_str: str) -> str:
-    """Convert ISO timestamp to human-readable relative time."""
     try:
         dt = datetime.fromisoformat(iso_str)
-        # Make naive datetime timezone-aware (local time assumed)
-        now = datetime.now()
-        diff = int((now - dt).total_seconds())
-        if diff < 10:
-            return "just now"
-        if diff < 60:
-            return f"{diff}s ago"
-        if diff < 3600:
-            return f"{diff // 60}m ago"
+        diff = int((datetime.now() - dt).total_seconds())
+        if diff < 10:   return "just now"
+        if diff < 60:   return f"{diff}s ago"
+        if diff < 3600: return f"{diff // 60}m ago"
         return f"{diff // 3600}h ago"
     except Exception:
         return "—"
 
 
 def render_card(agent: dict, agent_status: dict) -> None:
-    """Render a single agent card."""
-    status = agent_status.get("status", "idle")
-    task = agent_status.get("task", "Idle")
+    status  = agent_status.get("status", "idle")
+    task    = agent_status.get("task", "Not running")
     updated = agent_status.get("updated_at", "")
 
-    color = STATUS_COLORS.get(status, STATUS_COLORS["idle"])
-    label = STATUS_LABELS.get(status, "○ IDLE")
+    cfg      = STATUS_CONFIG.get(status, DEFAULT_CONFIG)
+    color    = cfg["color"]
+    label    = cfg["label"]
     time_ago = relative_time(updated) if updated else "—"
 
-    # Pixel-art card via HTML/CSS
-    card_html = f"""
+    # Glow only for active states
+    glow = f"0 0 12px {color}55" if status in ("working", "blocked") else "none"
+
+    st.markdown(f"""
     <div style="
-        background: #1a1a2e;
+        background: #141420;
         border: 2px solid {color};
-        border-radius: 4px;
-        padding: 16px;
-        margin-bottom: 8px;
+        border-radius: 6px;
+        padding: 18px 20px;
+        margin-bottom: 10px;
         font-family: 'Courier New', monospace;
-        box-shadow: 0 0 8px {color}44;
+        box-shadow: {glow};
     ">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <span style="font-size: 1.1em; color: #ffffff; font-weight: bold;">
-                {agent['icon']} {agent['name']}
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <span style="font-size:1.05em; color:#ffffff; font-weight:bold; letter-spacing:0.5px;">
+                {agent['icon']}&nbsp;&nbsp;{agent['name']}
             </span>
             <span style="
-                background: {color}22;
-                color: {color};
-                border: 1px solid {color};
-                border-radius: 2px;
-                padding: 2px 8px;
-                font-size: 0.75em;
-                font-weight: bold;
-                letter-spacing: 1px;
+                background:{color}1a;
+                color:{color};
+                border:1.5px solid {color};
+                border-radius:3px;
+                padding:3px 10px;
+                font-size:0.72em;
+                font-weight:bold;
+                letter-spacing:1.5px;
             ">{label}</span>
         </div>
-        <div style="color: #aaaacc; font-size: 0.85em; margin-bottom: 6px;">
-            {task}
-        </div>
-        <div style="color: #666688; font-size: 0.75em;">
-            {agent['project']} · {time_ago}
+        <div style="
+            color:#ccccdd;
+            font-size:0.88em;
+            line-height:1.5;
+            margin-bottom:8px;
+            min-height:1.4em;
+        ">{task}</div>
+        <div style="color:#44445a; font-size:0.72em;">
+            {agent['project']} &nbsp;·&nbsp; {time_ago}
         </div>
     </div>
-    """
-    st.markdown(card_html, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
 # Page config
 # ---------------------------------------------------------------------------
-st.set_page_config(
-    page_title="Keonhee HQ",
-    page_icon="🖥️",
-    layout="centered",
-)
+st.set_page_config(page_title="Keonhee HQ", page_icon="🖥️", layout="centered")
 
-# Dark background
 st.markdown("""
 <style>
-    .stApp { background-color: #0d0d1a; }
-    .block-container { padding-top: 2rem; max-width: 600px; }
-    h1, h2, h3 { font-family: 'Courier New', monospace; }
+    .stApp { background-color: #0a0a14; }
+    .block-container { padding-top: 2rem; max-width: 620px; }
 </style>
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
-# Main render loop
+# Header
 # ---------------------------------------------------------------------------
 st.markdown("## 🖥️ KEONHEE HQ")
-st.markdown("<div style='color: #555577; font-family: monospace; font-size: 0.85em; margin-bottom: 1.5rem;'>Agent Status Dashboard — live every 3s</div>", unsafe_allow_html=True)
 
 status_data = load_status()
 
-# Summary bar
 working = sum(1 for a in AGENTS if status_data.get(a["name"], {}).get("status") == "working")
-done    = sum(1 for a in AGENTS if status_data.get(a["name"], {}).get("status") == "done")
-idle    = len(AGENTS) - working - done
+blocked = sum(1 for a in AGENTS if status_data.get(a["name"], {}).get("status") == "blocked")
+idle    = len(AGENTS) - working - blocked
 
-summary_html = f"""
+st.markdown(f"""
 <div style="
-    background: #111128;
-    border: 1px solid #333355;
-    border-radius: 4px;
-    padding: 10px 16px;
-    margin-bottom: 1.5rem;
-    font-family: monospace;
-    font-size: 0.85em;
-    color: #888899;
-    display: flex;
-    gap: 24px;
+    background:#0f0f1e;
+    border:1px solid #222233;
+    border-radius:5px;
+    padding:10px 18px;
+    margin-bottom:1.5rem;
+    font-family:monospace;
+    font-size:0.82em;
+    display:flex;
+    gap:20px;
+    align-items:center;
 ">
-    <span style="color: #FFD700;">● {working} working</span>
-    <span style="color: #00CC66;">✓ {done} done</span>
-    <span style="color: #555566;">○ {idle} idle</span>
-    <span style="margin-left: auto; color: #444455;">↻ auto-refresh</span>
+    <span style="color:#00CC44;">● {working} working</span>
+    <span style="color:#FF3355;">⚠ {blocked} blocked</span>
+    <span style="color:#555566;">○ {idle} idle</span>
+    <span style="margin-left:auto; color:#333344; font-size:0.9em;">↻ 3s</span>
 </div>
-"""
-st.markdown(summary_html, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-# Agent cards
+# ---------------------------------------------------------------------------
+# Cards
+# ---------------------------------------------------------------------------
 for agent in AGENTS:
-    agent_status = status_data.get(agent["name"], {})
-    render_card(agent, agent_status)
+    render_card(agent, status_data.get(agent["name"], {}))
 
-# Refresh counter (drives rerun)
+# ---------------------------------------------------------------------------
+# Auto-refresh
+# ---------------------------------------------------------------------------
 if "tick" not in st.session_state:
     st.session_state.tick = 0
-
 st.session_state.tick += 1
 time.sleep(3)
 st.rerun()
