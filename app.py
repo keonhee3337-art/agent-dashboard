@@ -19,11 +19,10 @@ sys.stdout.reconfigure(encoding="utf-8")
 import streamlit as st
 
 # ---------------------------------------------------------------------------
-# Path resolution
+# Path resolution — on Streamlit Cloud, status.json is in agents/ at repo root
 # ---------------------------------------------------------------------------
 _HERE = Path(__file__).resolve().parent
-_PROJECT_ROOT = _HERE.parent.parent
-STATUS_FILE = _PROJECT_ROOT / "agents" / "status.json"
+STATUS_FILE = _HERE / "agents" / "status.json"
 
 # ---------------------------------------------------------------------------
 # Agent config
@@ -39,10 +38,10 @@ AGENTS = [
 
 # Status → color + label
 STATUS_CONFIG = {
-    "working": {"color": "#00CC44", "label": "● WORKING",      "dot": "#00CC44"},
-    "blocked": {"color": "#FF3355", "label": "⚠ NEEDS ACTION", "dot": "#FF3355"},
-    "idle":    {"color": "#555566", "label": "○ IDLE",          "dot": "#555566"},
-    "done":    {"color": "#00CC44", "label": "✓ DONE",          "dot": "#00CC44"},
+    "working": {"color": "#00CC44", "label": "● WORKING"},
+    "blocked": {"color": "#FF3355", "label": "⚠ NEEDS ACTION"},
+    "idle":    {"color": "#555566", "label": "○ IDLE"},
+    "done":    {"color": "#00CC44", "label": "✓ DONE"},
 }
 DEFAULT_CONFIG = STATUS_CONFIG["idle"]
 
@@ -80,9 +79,7 @@ def render_card(agent: dict, agent_status: dict) -> None:
     color    = cfg["color"]
     label    = cfg["label"]
     time_ago = relative_time(updated) if updated else "—"
-
-    # Glow only for active states
-    glow = f"0 0 12px {color}55" if status in ("working", "blocked") else "none"
+    glow     = f"0 0 12px {color}55" if status in ("working", "blocked") else "none"
 
     st.markdown(f"""
     <div style="
@@ -166,15 +163,9 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ---------------------------------------------------------------------------
-# Cards
-# ---------------------------------------------------------------------------
 for agent in AGENTS:
     render_card(agent, status_data.get(agent["name"], {}))
 
-# ---------------------------------------------------------------------------
-# Auto-refresh
-# ---------------------------------------------------------------------------
 if "tick" not in st.session_state:
     st.session_state.tick = 0
 st.session_state.tick += 1
